@@ -2,8 +2,8 @@ export const getDefaultWatermarkSettings = () => ({
   enabled: false,
   watermarkType: 'text',
   position: {
-    horizontal: 'Right',
-    vertical: 'Bottom',
+    horizontal: 'right',
+    vertical: 'bottom',
     marginX: 50,
     marginY: 50,
   },
@@ -43,13 +43,13 @@ export const WATERMARK_FONT_FAMILIES = [
 
 export const WATERMARK_ALIGNMENTS = {
   horizontal: [
-    { value: 'Left', label: 'Left' },
-    { value: 'Center', label: 'Center' },
-    { value: 'Right', label: 'Right' },
+    { value: 'left', label: 'Left' },
+    { value: 'center', label: 'Center' },
+    { value: 'right', label: 'Right' },
   ],
   vertical: [
-    { value: 'Top', label: 'Top' },
-    { value: 'Center', label: 'Center' },
-    { value: 'Bottom', label: 'Bottom' },
+    { value: 'top', label: 'Top' },
+    { value: 'center', label: 'Center' },
+    { value: 'bottom', label: 'Bottom' },
   ],
 };

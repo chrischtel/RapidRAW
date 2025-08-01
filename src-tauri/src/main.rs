@@ -49,7 +49,7 @@ use crate::ai_processing::{
     AiSubjectMaskParameters, run_u2netp_model, AiForegroundMaskParameters
 };
 use crate::formats::{is_raw_file};
-use crate::image_loader::{load_base_image_from_bytes, composite_patches_on_image, load_and_composite};
+use crate::image_loader::{load_base_image_from_bytes, composite_patches_on_image, load_and_composite,};
 use crate::watermark::{WatermarkRenderer, WatermarkSettings};
 
 #[derive(Clone)]
@@ -1051,6 +1051,73 @@ fn generate_preset_preview(
 }
 
 #[tauri::command]
+fn generate_watermark_preview_command(
+    image_path: String,
+    js_adjustments: serde_json::Value,
+    watermark_settings: crate::watermark::WatermarkSettings,
+    state: tauri::State<AppState>,
+) -> Result<String, String> {
+    println!("Generating watermark preview for: {}", image_path);
+    
+    // Load the image and metadata
+    let file_bytes = fs::read(&image_path)
+        .map_err(|e| format!("Failed to read image file: {}", e))?;
+    
+    let base_image_loaded = crate::image_loader::load_base_image_from_bytes(&file_bytes, &image_path, false)
+        .map_err(|e| format!("Failed to load image: {}", e))?;
+    
+    // Load metadata from sidecar if available
+    let sidecar_path = get_sidecar_path(&image_path);
+    let metadata: ImageMetadata = if sidecar_path.exists() {
+        let file_content = fs::read_to_string(sidecar_path)
+            .map_err(|e| format!("Failed to read sidecar: {}", e))?;
+        serde_json::from_str(&file_content).unwrap_or_default()
+    } else {
+        ImageMetadata::default()
+    };
+    
+    // Apply adjustments if provided
+    let base_image = if js_adjustments != serde_json::Value::Null {
+        let context = get_or_init_gpu_context(&state)?;
+        let all_adjustments = get_all_adjustments_from_json(&js_adjustments);
+        
+        // Apply transformations
+        let (transformed_image, unscaled_crop_offset) = 
+            apply_all_transformations(&base_image_loaded, &js_adjustments, 1.0);
+        let (img_w, img_h) = transformed_image.dimensions();
+
+        // Apply masks if any
+        let mask_definitions: Vec<MaskDefinition> = js_adjustments.get("masks")
+            .and_then(|m| serde_json::from_value(m.clone()).ok())
+            .unwrap_or_else(Vec::new);
+
+        let mask_bitmaps: Vec<ImageBuffer<Luma<u8>, Vec<u8>>> = mask_definitions.iter()
+            .filter_map(|def| generate_mask_bitmap(def, img_w, img_h, 1.0, unscaled_crop_offset))
+            .collect();
+
+        process_and_get_dynamic_image(&context, &transformed_image, all_adjustments, &mask_bitmaps)?
+    } else {
+        base_image_loaded
+    };
+    
+    // Get filename for metadata replacement
+    let filename = std::path::Path::new(&image_path)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("unknown.jpg");
+    
+    // Generate the watermark preview
+    let preview = crate::watermark::generate_watermark_preview(
+        &base_image,
+        &watermark_settings,
+        &metadata,
+        filename,
+    ).map_err(|e| format!("Failed to generate watermark preview: {}", e))?;
+    
+    Ok(preview)
+}
+
+#[tauri::command]
 fn update_window_effect(theme: String, window: tauri::Window) {
     apply_window_effect(theme, window);
 }
@@ -1246,6 +1313,7 @@ fn main() {
             export_image,
             batch_export_images,
             cancel_export,
+            generate_watermark_preview_command,
             generate_fullscreen_preview,
             generate_preset_preview,
             generate_uncropped_preview,

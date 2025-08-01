@@ -43,6 +43,8 @@ export default function ExportPanel({ selectedImage, adjustments, multiSelectedP
   const [stripGps, setStripGps] = useState(true);
   const [filenameTemplate, setFilenameTemplate] = useState('{original_filename}_edited');
   const [watermarkSettings, setWatermarkSettings] = useState(getDefaultWatermarkSettings());
+  const [watermarkPreview, setWatermarkPreview] = useState(null);
+  const [isGeneratingPreview, setIsGeneratingPreview] = useState(false);
   const filenameInputRef = useRef(null);
 
   const { status, progress, errorMessage } = exportState;
@@ -148,6 +150,25 @@ export default function ExportPanel({ selectedImage, adjustments, multiSelectedP
       await invoke('cancel_export');
     } catch (error) {
       console.error("Failed to send cancel request:", error);
+    }
+  };
+
+  const generateWatermarkPreview = async () => {
+    if (!selectedImage || isGeneratingPreview) return;
+    
+    setIsGeneratingPreview(true);
+    try {
+      const preview = await invoke('generate_watermark_preview_command', {
+        imagePath: selectedImage.path,
+        jsAdjustments: adjustments || {},
+        watermarkSettings,
+      });
+      setWatermarkPreview(preview);
+    } catch (error) {
+      console.error('Failed to generate watermark preview:', error);
+      setWatermarkPreview(null);
+    } finally {
+      setIsGeneratingPreview(false);
     }
   };
 
@@ -289,15 +310,47 @@ export default function ExportPanel({ selectedImage, adjustments, multiSelectedP
                 disabled={isExporting}
               />
               {watermarkSettings.enabled && (
-                <div className="pl-2 border-l-2 border-surface space-y-3">
+                <div className="pl-2 border-l-2 border-surface space-y-4">
+                  {/* Preview Button */}
+                  <div className="flex gap-2">
+                    <button
+                      onClick={generateWatermarkPreview}
+                      className="flex-1 px-3 py-2 bg-accent/20 text-accent rounded border border-accent hover:bg-accent/30 transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                      disabled={isExporting || isGeneratingPreview || !selectedImage}
+                    >
+                      {isGeneratingPreview ? 'Generating...' : 'Preview Watermark'}
+                    </button>
+                  </div>
+
+                  {/* Preview Display */}
+                  {watermarkPreview && (
+                    <div className="border border-surface rounded p-2">
+                      <p className="text-xs text-text-secondary mb-2">Watermark Preview:</p>
+                      <div className="relative">
+                        <img 
+                          src={watermarkPreview} 
+                          alt="Watermark Preview" 
+                          className="w-full h-auto rounded border border-surface"
+                          style={{ maxHeight: '200px', objectFit: 'contain' }}
+                        />
+                        <button
+                          onClick={() => setWatermarkPreview(null)}
+                          className="absolute top-1 right-1 w-6 h-6 bg-black/50 text-white rounded-full hover:bg-black/70 transition-colors flex items-center justify-center text-xs"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Watermark Type */}
                   <div>
                     <label className="block text-sm text-text-secondary mb-2">Type</label>
                     <div className="grid grid-cols-2 gap-2">
                       <button
-                        onClick={() => setWatermarkSettings(prev => ({ ...prev, watermarkType: 'Text' }))}
+                        onClick={() => setWatermarkSettings(prev => ({ ...prev, watermarkType: 'text' }))}
                         className={`p-2 rounded border text-sm transition-colors ${
-                          watermarkSettings.watermarkType === 'Text'
+                          watermarkSettings.watermarkType === 'text'
                             ? 'border-accent bg-accent/10 text-accent'
                             : 'border-surface bg-surface hover:bg-card-active text-text-secondary'
                         }`}
@@ -305,9 +358,9 @@ export default function ExportPanel({ selectedImage, adjustments, multiSelectedP
                         Text
                       </button>
                       <button
-                        onClick={() => setWatermarkSettings(prev => ({ ...prev, watermarkType: 'Image' }))}
+                        onClick={() => setWatermarkSettings(prev => ({ ...prev, watermarkType: 'image' }))}
                         className={`p-2 rounded border text-sm transition-colors ${
-                          watermarkSettings.watermarkType === 'Image'
+                          watermarkSettings.watermarkType === 'image'
                             ? 'border-accent bg-accent/10 text-accent'
                             : 'border-surface bg-surface hover:bg-card-active text-text-secondary'
                         }`}
@@ -318,30 +371,237 @@ export default function ExportPanel({ selectedImage, adjustments, multiSelectedP
                   </div>
 
                   {/* Text Settings */}
-                  {watermarkSettings.watermarkType === 'Text' && (
-                    <div>
-                      <label className="block text-sm text-text-secondary mb-2">Text Content</label>
-                      <textarea
-                        value={watermarkSettings.textSettings?.text || ''}
-                        onChange={(e) => setWatermarkSettings(prev => ({
-                          ...prev,
-                          textSettings: { 
-                            ...prev.textSettings,
-                            text: e.target.value 
-                          }
-                        }))}
-                        placeholder="Enter watermark text..."
-                        className="w-full h-16 bg-bg-primary border border-surface rounded p-2 text-sm text-text-primary resize-none focus:ring-accent focus:border-accent"
-                        disabled={isExporting}
-                      />
-                      <p className="text-xs text-text-tertiary mt-1">
-                        Use placeholders like {'{photographer}'}, {'{camera_make}'}, {'{aperture}'}, etc.
-                      </p>
+                  {watermarkSettings.watermarkType === 'text' && (
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-sm text-text-secondary mb-2">Text Content</label>
+                        <textarea
+                          value={watermarkSettings.textSettings?.text || ''}
+                          onChange={(e) => setWatermarkSettings(prev => ({
+                            ...prev,
+                            textSettings: { 
+                              ...prev.textSettings,
+                              text: e.target.value 
+                            }
+                          }))}
+                          placeholder="Enter watermark text..."
+                          className="w-full h-16 bg-bg-primary border border-surface rounded p-2 text-sm text-text-primary resize-none focus:ring-accent focus:border-accent"
+                          disabled={isExporting}
+                        />
+                        <p className="text-xs text-text-tertiary mt-1">
+                          Use placeholders like {'{photographer}'}, {'{camera_make}'}, {'{aperture}'}, etc.
+                        </p>
+                      </div>
+
+                      {/* Font Controls */}
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-sm text-text-secondary mb-1">Font Family</label>
+                          <select
+                            value={watermarkSettings.textSettings?.fontFamily || 'Arial'}
+                            onChange={(e) => setWatermarkSettings(prev => ({
+                              ...prev,
+                              textSettings: { 
+                                ...prev.textSettings,
+                                fontFamily: e.target.value 
+                              }
+                            }))}
+                            className="w-full bg-bg-primary border border-surface rounded p-2 text-sm text-text-primary focus:ring-accent focus:border-accent"
+                            disabled={isExporting}
+                          >
+                            <option value="Arial">Arial</option>
+                            <option value="Helvetica">Helvetica</option>
+                            <option value="Times New Roman">Times New Roman</option>
+                            <option value="Georgia">Georgia</option>
+                            <option value="Verdana">Verdana</option>
+                            <option value="Tahoma">Tahoma</option>
+                          </select>
+                        </div>
+                        
+                        <div>
+                          <label className="block text-sm text-text-secondary mb-1">
+                            Font Size ({watermarkSettings.textSettings?.fontSize || 24}px)
+                          </label>
+                          <input
+                            type="range"
+                            min="8"
+                            max="72"
+                            value={watermarkSettings.textSettings?.fontSize || 24}
+                            onChange={(e) => setWatermarkSettings(prev => ({
+                              ...prev,
+                              textSettings: { 
+                                ...prev.textSettings,
+                                fontSize: parseFloat(e.target.value) 
+                              }
+                            }))}
+                            className="w-full"
+                            disabled={isExporting}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Text Color */}
+                      <div>
+                        <label className="block text-sm text-text-secondary mb-2">Text Color</label>
+                        <div className="flex items-center gap-3">
+                          <input
+                            type="color"
+                            value={`#${(watermarkSettings.textSettings?.color || [255, 255, 255, 255]).slice(0, 3).map(c => c.toString(16).padStart(2, '0')).join('')}`}
+                            onChange={(e) => {
+                              const hex = e.target.value.slice(1);
+                              const r = parseInt(hex.slice(0, 2), 16);
+                              const g = parseInt(hex.slice(2, 4), 16);
+                              const b = parseInt(hex.slice(4, 6), 16);
+                              const currentAlpha = watermarkSettings.textSettings?.color?.[3] || 255;
+                              setWatermarkSettings(prev => ({
+                                ...prev,
+                                textSettings: { 
+                                  ...prev.textSettings,
+                                  color: [r, g, b, currentAlpha]
+                                }
+                              }));
+                            }}
+                            className="w-10 h-8 rounded border border-surface cursor-pointer"
+                            disabled={isExporting}
+                          />
+                          <div className="flex-1">
+                            <label className="block text-xs text-text-tertiary mb-1">
+                              Opacity ({Math.round(((watermarkSettings.textSettings?.color?.[3] || 255) / 255) * 100)}%)
+                            </label>
+                            <input
+                              type="range"
+                              min="0"
+                              max="255"
+                              value={watermarkSettings.textSettings?.color?.[3] || 255}
+                              onChange={(e) => {
+                                const alpha = parseInt(e.target.value);
+                                const currentColor = watermarkSettings.textSettings?.color || [255, 255, 255, 255];
+                                setWatermarkSettings(prev => ({
+                                  ...prev,
+                                  textSettings: { 
+                                    ...prev.textSettings,
+                                    color: [currentColor[0], currentColor[1], currentColor[2], alpha]
+                                  }
+                                }));
+                              }}
+                              className="w-full"
+                              disabled={isExporting}
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Text Style Options */}
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            id="watermark-bold"
+                            checked={watermarkSettings.textSettings?.bold || false}
+                            onChange={(e) => setWatermarkSettings(prev => ({
+                              ...prev,
+                              textSettings: { 
+                                ...prev.textSettings,
+                                bold: e.target.checked 
+                              }
+                            }))}
+                            className="rounded"
+                            disabled={isExporting}
+                          />
+                          <label htmlFor="watermark-bold" className="text-sm text-text-secondary">Bold</label>
+                        </div>
+                        
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            id="watermark-italic"
+                            checked={watermarkSettings.textSettings?.italic || false}
+                            onChange={(e) => setWatermarkSettings(prev => ({
+                              ...prev,
+                              textSettings: { 
+                                ...prev.textSettings,
+                                italic: e.target.checked 
+                              }
+                            }))}
+                            className="rounded"
+                            disabled={isExporting}
+                          />
+                          <label htmlFor="watermark-italic" className="text-sm text-text-secondary">Italic</label>
+                        </div>
+                      </div>
+
+                      {/* Shadow Options */}
+                      <div>
+                        <div className="flex items-center gap-2 mb-2">
+                          <input
+                            type="checkbox"
+                            id="watermark-shadow"
+                            checked={watermarkSettings.textSettings?.shadow || false}
+                            onChange={(e) => setWatermarkSettings(prev => ({
+                              ...prev,
+                              textSettings: { 
+                                ...prev.textSettings,
+                                shadow: e.target.checked 
+                              }
+                            }))}
+                            className="rounded"
+                            disabled={isExporting}
+                          />
+                          <label htmlFor="watermark-shadow" className="text-sm text-text-secondary">Text Shadow</label>
+                        </div>
+                        
+                        {watermarkSettings.textSettings?.shadow && (
+                          <div className="ml-4 space-y-2">
+                            <div className="grid grid-cols-2 gap-2">
+                              <div>
+                                <label className="block text-xs text-text-tertiary mb-1">
+                                  Shadow X ({watermarkSettings.textSettings?.shadowOffsetX || 1}px)
+                                </label>
+                                <input
+                                  type="range"
+                                  min="-10"
+                                  max="10"
+                                  value={watermarkSettings.textSettings?.shadowOffsetX || 1}
+                                  onChange={(e) => setWatermarkSettings(prev => ({
+                                    ...prev,
+                                    textSettings: { 
+                                      ...prev.textSettings,
+                                      shadowOffsetX: parseInt(e.target.value) 
+                                    }
+                                  }))}
+                                  className="w-full"
+                                  disabled={isExporting}
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-xs text-text-tertiary mb-1">
+                                  Shadow Y ({watermarkSettings.textSettings?.shadowOffsetY || 1}px)
+                                </label>
+                                <input
+                                  type="range"
+                                  min="-10"
+                                  max="10"
+                                  value={watermarkSettings.textSettings?.shadowOffsetY || 1}
+                                  onChange={(e) => setWatermarkSettings(prev => ({
+                                    ...prev,
+                                    textSettings: { 
+                                      ...prev.textSettings,
+                                      shadowOffsetY: parseInt(e.target.value) 
+                                    }
+                                  }))}
+                                  className="w-full"
+                                  disabled={isExporting}
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   )}
 
                   {/* Image Settings */}
-                  {watermarkSettings.watermarkType === 'Image' && (
+                  {watermarkSettings.watermarkType === 'image' && (
                     <div>
                       <label className="block text-sm text-text-secondary mb-2">Watermark Image</label>
                       <div className="flex gap-2">
@@ -377,12 +637,12 @@ export default function ExportPanel({ selectedImage, adjustments, multiSelectedP
                     </div>
                   )}
 
-                  {/* Position and Opacity */}
+                  {/* Position and Global Settings */}
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm text-text-secondary mb-1">Position</label>
                       <select
-                        value={`${watermarkSettings.position?.horizontal || 'Right'}-${watermarkSettings.position?.vertical || 'Bottom'}`}
+                        value={`${watermarkSettings.position?.horizontal || 'right'}-${watermarkSettings.position?.vertical || 'bottom'}`}
                         onChange={(e) => {
                           const [horizontal, vertical] = e.target.value.split('-');
                           setWatermarkSettings(prev => ({
@@ -399,32 +659,93 @@ export default function ExportPanel({ selectedImage, adjustments, multiSelectedP
                         className="w-full bg-bg-primary border border-surface rounded p-2 text-sm text-text-primary focus:ring-accent focus:border-accent"
                         disabled={isExporting}
                       >
-                        <option value="Left-Top">Top Left</option>
-                        <option value="Center-Top">Top Center</option>
-                        <option value="Right-Top">Top Right</option>
-                        <option value="Left-Center">Center Left</option>
-                        <option value="Center-Center">Center</option>
-                        <option value="Right-Center">Center Right</option>
-                        <option value="Left-Bottom">Bottom Left</option>
-                        <option value="Center-Bottom">Bottom Center</option>
-                        <option value="Right-Bottom">Bottom Right</option>
+                        <option value="left-top">Top Left</option>
+                        <option value="center-top">Top Center</option>
+                        <option value="right-top">Top Right</option>
+                        <option value="left-center">Center Left</option>
+                        <option value="center-center">Center</option>
+                        <option value="right-center">Center Right</option>
+                        <option value="left-bottom">Bottom Left</option>
+                        <option value="center-bottom">Bottom Center</option>
+                        <option value="right-bottom">Bottom Right</option>
                       </select>
                     </div>
                     <div>
                       <label className="block text-sm text-text-secondary mb-1">
-                        Opacity ({Math.round((watermarkSettings.opacity || 0.8) * 100)}%)
+                        Scale ({Math.round((watermarkSettings.scale || 1.0) * 100)}%)
                       </label>
                       <input
                         type="range"
-                        min="0"
-                        max="1"
-                        step="0.05"
-                        value={watermarkSettings.opacity || 0.8}
-                        onChange={(e) => setWatermarkSettings(prev => ({ ...prev, opacity: parseFloat(e.target.value) }))}
+                        min="0.1"
+                        max="3.0"
+                        step="0.1"
+                        value={watermarkSettings.scale || 1.0}
+                        onChange={(e) => setWatermarkSettings(prev => ({ ...prev, scale: parseFloat(e.target.value) }))}
                         className="w-full"
                         disabled={isExporting}
                       />
                     </div>
+                  </div>
+
+                  {/* Margin Controls */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm text-text-secondary mb-1">
+                        Margin X ({watermarkSettings.position?.marginX || 50}px)
+                      </label>
+                      <input
+                        type="range"
+                        min="0"
+                        max="200"
+                        value={watermarkSettings.position?.marginX || 50}
+                        onChange={(e) => setWatermarkSettings(prev => ({
+                          ...prev,
+                          position: {
+                            ...prev.position,
+                            marginX: parseInt(e.target.value)
+                          }
+                        }))}
+                        className="w-full"
+                        disabled={isExporting}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm text-text-secondary mb-1">
+                        Margin Y ({watermarkSettings.position?.marginY || 50}px)
+                      </label>
+                      <input
+                        type="range"
+                        min="0"
+                        max="200"
+                        value={watermarkSettings.position?.marginY || 50}
+                        onChange={(e) => setWatermarkSettings(prev => ({
+                          ...prev,
+                          position: {
+                            ...prev.position,
+                            marginY: parseInt(e.target.value)
+                          }
+                        }))}
+                        className="w-full"
+                        disabled={isExporting}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Global Opacity */}
+                  <div>
+                    <label className="block text-sm text-text-secondary mb-1">
+                      Watermark Opacity ({Math.round((watermarkSettings.opacity || 0.8) * 100)}%)
+                    </label>
+                    <input
+                      type="range"
+                      min="0"
+                      max="1"
+                      step="0.05"
+                      value={watermarkSettings.opacity || 0.8}
+                      onChange={(e) => setWatermarkSettings(prev => ({ ...prev, opacity: parseFloat(e.target.value) }))}
+                      className="w-full"
+                      disabled={isExporting}
+                    />
                   </div>
                 </div>
               )}

@@ -18,6 +18,7 @@ pub struct WatermarkSettings {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum WatermarkType {
     Text,
     Image,
@@ -33,6 +34,7 @@ pub struct WatermarkPosition {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum HorizontalAlignment {
     Left,
     Center,
@@ -40,6 +42,7 @@ pub enum HorizontalAlignment {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum VerticalAlignment {
     Top,
     Center,
@@ -424,4 +427,46 @@ impl WatermarkRenderer {
         
         (x.max(0), y.max(0))
     }
+}
+
+/// Generate a preview of the watermark on the image
+/// Returns a base64-encoded JPEG image for display in the UI
+pub fn generate_watermark_preview(
+    image: &DynamicImage,
+    settings: &WatermarkSettings,
+    metadata: &crate::image_processing::ImageMetadata,
+    original_filename: &str,
+) -> Result<String> {
+    if !settings.enabled {
+        return Err(anyhow::anyhow!("Watermark is not enabled"));
+    }
+    
+    let mut preview_image = image.clone();
+    
+    // Scale down the image for preview (max 800px on longest side)
+    let (width, height) = (preview_image.width() as f32, preview_image.height() as f32);
+    let max_dimension = width.max(height);
+    if max_dimension > 800.0 {
+        let scale = 800.0 / max_dimension;
+        let new_width = (width * scale) as u32;
+        let new_height = (height * scale) as u32;
+        preview_image = preview_image.resize(new_width, new_height, image::imageops::FilterType::Lanczos3);
+    }
+    
+    // Apply the watermark
+    let renderer = WatermarkRenderer::new()?;
+    let watermarked = renderer.apply_watermark(preview_image, settings, metadata, original_filename)?;
+    
+    // Convert to JPEG bytes
+    let mut jpeg_data = Vec::new();
+    {
+        use std::io::Cursor;
+        let mut cursor = Cursor::new(&mut jpeg_data);
+        watermarked.write_to(&mut cursor, image::ImageFormat::Jpeg)?;
+    }
+    
+    // Encode as base64
+    use base64::Engine;
+    let base64_data = base64::engine::general_purpose::STANDARD.encode(&jpeg_data);
+    Ok(format!("data:image/jpeg;base64,{}", base64_data))
 }
