@@ -50,6 +50,7 @@ use crate::ai_processing::{
 };
 use crate::formats::{is_raw_file};
 use crate::image_loader::{load_base_image_from_bytes, composite_patches_on_image, load_and_composite};
+use crate::watermark::{WatermarkRenderer, WatermarkSettings};
 
 #[derive(Clone)]
 pub struct LoadedImage {
@@ -111,6 +112,7 @@ struct ExportSettings {
     keep_metadata: bool,
     strip_gps: bool,
     filename_template: Option<String>,
+    watermark: Option<WatermarkSettings>, 
 }
 
 fn apply_all_transformations(
@@ -525,6 +527,26 @@ async fn export_image(
                 }
             }
 
+            // Apply watermark if enabled
+            if let Some(watermark_settings) = &export_settings.watermark {
+                let watermark_renderer = WatermarkRenderer::new()
+                    .map_err(|e| format!("Failed to initialize watermark renderer: {}", e))?;
+                let original_path_obj = std::path::Path::new(&original_path);
+                let filename = original_path_obj.file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("unknown");
+                
+                // Create a simple metadata placeholder - we'll need to load actual metadata later
+                let metadata = crate::image_processing::ImageMetadata::default();
+                
+                final_image = watermark_renderer.apply_watermark(
+                    final_image, 
+                    watermark_settings, 
+                    &metadata, 
+                    filename
+                ).map_err(|e| format!("Failed to apply watermark: {}", e))?;
+            }
+
             let output_path_obj = std::path::Path::new(&output_path);
             let extension = output_path_obj.extension().and_then(|s| s.to_str()).unwrap_or("").to_lowercase();
             
@@ -609,7 +631,7 @@ async fn batch_export_images(
                 } else {
                     ImageMetadata::default()
                 };
-                let js_adjustments = metadata.adjustments;
+                let js_adjustments = metadata.adjustments.clone();
 
                 let base_image = load_and_composite(image_path_str, &js_adjustments, false)
                     .map_err(|e| e.to_string())?;
@@ -653,6 +675,23 @@ async fn batch_export_images(
                             ResizeMode::Height => final_image.thumbnail(u32::MAX, resize_opts.value),
                         };
                     }
+                }
+
+                // Apply watermark if enabled
+                if let Some(watermark_settings) = &export_settings.watermark {
+                    let watermark_renderer = WatermarkRenderer::new()
+                        .map_err(|e| format!("Failed to initialize watermark renderer: {}", e))?;
+                    let original_path_obj = std::path::Path::new(image_path_str);
+                    let filename = original_path_obj.file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("unknown");
+                    
+                    final_image = watermark_renderer.apply_watermark(
+                        final_image, 
+                        watermark_settings, 
+                        &metadata, 
+                        filename
+                    ).map_err(|e| format!("Failed to apply watermark: {}", e))?;
                 }
 
                 let original_path = std::path::Path::new(image_path_str);
