@@ -12,6 +12,7 @@ mod image_loader;
 mod tagging;
 mod tag_candidates;
 mod tag_hierarchy;
+mod watermark;
 
 use std::io::Cursor;
 use std::sync::{Arc, Mutex};
