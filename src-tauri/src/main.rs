@@ -1109,6 +1109,101 @@ fn get_supported_file_types() -> Result<serde_json::Value, String> {
     }))
 }
 
+#[tauri::command]
+fn sample_pixel_for_white_balance(
+    x: f32, 
+    y: f32, 
+    crop_x: Option<f32>,
+    crop_y: Option<f32>,
+    rotation: Option<f32>,
+    flip_horizontal: Option<bool>,
+    flip_vertical: Option<bool>,
+    state: tauri::State<AppState>
+) -> Result<(f32, f32), String> {
+    let image_guard = state.original_image.lock().unwrap();
+    let base_image = image_guard.as_ref()
+        .ok_or_else(|| "No image loaded".to_string())?;
+
+    // Handle rotation and flips to get correct pixel coordinates
+    let mut actual_x = x;
+    let mut actual_y = y;
+    
+    let rotation = rotation.unwrap_or(0.0);
+    let flip_h = flip_horizontal.unwrap_or(false);
+    let flip_v = flip_vertical.unwrap_or(false);
+    
+    let (width, height) = base_image.image.dimensions();
+    let (mut img_width, mut img_height) = (width as f32, height as f32);
+    
+    // Apply rotation transformation
+    if rotation == 90.0 {
+        let temp = actual_x;
+        actual_x = actual_y;
+        actual_y = img_width - temp;
+        std::mem::swap(&mut img_width, &mut img_height);
+    } else if rotation == 180.0 {
+        actual_x = img_width - actual_x;
+        actual_y = img_height - actual_y;
+    } else if rotation == 270.0 {
+        let temp = actual_x;
+        actual_x = img_height - actual_y;
+        actual_y = temp;
+        std::mem::swap(&mut img_width, &mut img_height);
+    }
+    
+    // Apply flip transformations
+    if flip_h {
+        actual_x = img_width - actual_x;
+    }
+    if flip_v {
+        actual_y = img_height - actual_y;
+    }
+    
+    // Apply crop offset
+    if let (Some(crop_x), Some(crop_y)) = (crop_x, crop_y) {
+        actual_x += crop_x;
+        actual_y += crop_y;
+    }
+    
+    // Clamp coordinates to image bounds
+    let pixel_x = (actual_x.max(0.0).min(width as f32 - 1.0)) as u32;
+    let pixel_y = (actual_y.max(0.0).min(height as f32 - 1.0)) as u32;
+    
+    // Sample the pixel
+    let pixel = base_image.image.get_pixel(pixel_x, pixel_y);
+    let rgb = [pixel[0] as f32 / 255.0, pixel[1] as f32 / 255.0, pixel[2] as f32 / 255.0];
+    
+    // Calculate white balance adjustments from RGB
+    // Assume the sampled area should be neutral (equal R, G, B)
+    let avg_luminance = (rgb[0] + rgb[1] + rgb[2]) / 3.0;
+    
+    if avg_luminance < 0.01 {
+        return Err("Sampled area is too dark for white balance calculation".to_string());
+    }
+    
+    // Calculate ratios relative to green channel (standard approach)
+    let red_ratio = rgb[0] / rgb[1];
+    let blue_ratio = rgb[2] / rgb[1];
+    
+    // Convert ratios to temperature and tint adjustments
+    // Temperature: cooler when more blue, warmer when more red
+    let temperature = (blue_ratio - red_ratio) * 50.0;
+    
+    // Tint: magenta when green is low, green when green is high
+    let green_luminance = rgb[1];
+    let rg_avg = (rgb[0] + rgb[2]) / 2.0;
+    let tint = (green_luminance - rg_avg) * 100.0;
+    
+    // Clamp values to reasonable ranges
+    let temperature = temperature.max(-100.0).min(100.0);
+    let tint = tint.max(-100.0).min(100.0);
+    
+    Ok((temperature, tint))
+}
+
+
+
+
 fn apply_window_effect(theme: String, window: impl raw_window_handle::HasWindowHandle) {
     #[cfg(target_os = "windows")]
     {
@@ -1217,6 +1312,7 @@ fn main() {
             test_comfyui_connection,
             invoke_generative_replace_with_mask_def,
             get_supported_file_types,
+            sample_pixel_for_white_balance,
             image_processing::generate_histogram,
             image_processing::generate_waveform,
             image_processing::calculate_auto_adjustments,

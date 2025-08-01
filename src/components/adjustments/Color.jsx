@@ -2,6 +2,8 @@ import { useState } from 'react';
 import Slider from '../ui/Slider';
 import ColorWheel from '../ui/ColorWheel';
 import { INITIAL_ADJUSTMENTS } from '../../utils/adjustments';
+import { Pipette } from 'lucide-react';
+import { invoke } from '@tauri-apps/api/core';
 
 const ColorSwatch = ({ color, name, isActive, onClick }) => (
     <button
@@ -98,18 +100,49 @@ const HSL_COLORS = [
 
 export default function ColorPanel({ adjustments, setAdjustments }) {
     const [activeColor, setActiveColor] = useState('reds');
+    const [isWbPickerActive, setIsWbPickerActive] = useState(false);
 
     const handleGlobalChange = (key, value) => {
         setAdjustments(prev => ({ ...prev, [key]: parseFloat(value) }));
+    };
+
+    const handleWbPickerToggle = () => {
+        setIsWbPickerActive(prev => !prev);
+    };
+
+    // Test handler for white balance picker
+    const testWbPicker = async () => {
+        try {
+            const [temperature, tint] = await invoke('sample_pixel_for_white_balance', {
+                x: 100.0,
+                y: 100.0,
+                cropX: null,
+                cropY: null,
+                rotation: null,
+                flipHorizontal: null,
+                flipVertical: null,
+            });
+            
+            console.log('WB Picker result:', { temperature, tint });
+            
+            // Apply the calculated white balance adjustments
+            setAdjustments(prev => ({
+                ...prev,
+                temperature: -temperature, // Invert to correct the color cast
+                tint: -tint, // Invert to correct the color cast
+            }));
+        } catch (error) {
+            console.error('WB Picker test failed:', error);
+        }
     };
 
     const handleHslChange = (property, value) => {
         setAdjustments(prev => ({
             ...prev,
             hsl: {
-                ...(prev.hsl || {}),
+                ...prev.hsl,
                 [activeColor]: {
-                    ...(prev.hsl?.[activeColor] || {}),
+                    ...prev.hsl?.[activeColor],
                     [property]: parseFloat(value),
                 },
             },
@@ -121,7 +154,30 @@ export default function ColorPanel({ adjustments, setAdjustments }) {
     return (
         <div> 
             <div className="mb-4 p-2 bg-bg-tertiary rounded-md">
-                <p className="text-md font-semibold mb-2 text-primary">White Balance</p>
+                <div className="flex items-center justify-between mb-2">
+                    <p className="text-md font-semibold text-primary">White Balance</p>
+                    <div className="flex gap-2">
+                        <button
+                            onClick={testWbPicker}
+                            className="px-2 py-1 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded"
+                            title="Test WB picker (samples pixel at 100,100)"
+                        >
+                            Test
+                        </button>
+                        <button
+                            onClick={handleWbPickerToggle}
+                            className={`p-2 rounded-md transition-colors ${
+                                isWbPickerActive 
+                                    ? 'bg-accent text-white' 
+                                    : 'bg-bg-secondary hover:bg-surface text-text-secondary hover:text-text-primary'
+                            }`}
+                            title="White balance picker (WIP)"
+                            disabled
+                        >
+                            <Pipette size={16} />
+                        </button>
+                    </div>
+                </div>
                 <Slider
                     label="Temperature"
                     value={adjustments.temperature || 0}
