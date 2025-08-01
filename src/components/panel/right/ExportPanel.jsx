@@ -314,11 +314,12 @@ export default function ExportPanel({ selectedImage, adjustments, multiSelectedP
                   {/* Preview Button */}
                   <div className="flex gap-2">
                     <button
-                      onClick={generateWatermarkPreview}
-                      className="flex-1 px-3 py-2 bg-accent/20 text-accent rounded border border-accent hover:bg-accent/30 transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
-                      disabled={isExporting || isGeneratingPreview || !selectedImage}
+                      onClick={() => {}}
+                      className="flex-1 px-3 py-2 bg-surface/50 text-text-tertiary rounded border border-surface transition-colors text-sm opacity-50 cursor-not-allowed"
+                      disabled={true}
+                      title="Preview feature coming soon"
                     >
-                      {isGeneratingPreview ? 'Generating...' : 'Preview Watermark'}
+                      Preview (Coming Soon)
                     </button>
                   </div>
 
