@@ -18,7 +18,6 @@ pub struct WatermarkSettings {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub enum WatermarkType {
     Text,
     Image,
@@ -34,7 +33,6 @@ pub struct WatermarkPosition {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub enum HorizontalAlignment {
     Left,
     Center,
@@ -42,7 +40,6 @@ pub enum HorizontalAlignment {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub enum VerticalAlignment {
     Top,
     Center,
@@ -168,10 +165,14 @@ pub struct WatermarkRenderer {
 }
 
 impl WatermarkRenderer {
-   pub fn new() -> Result<Self> {
+    pub fn new() -> Result<Self> {
         let mut fonts = std::collections::HashMap::new();
-                
-        Self::try_load_system_fonts(&mut fonts)?;
+        
+        // Try to load system fonts, but don't fail if none are found for now
+        if let Err(e) = Self::try_load_system_fonts(&mut fonts) {
+            println!("Warning: Failed to load system fonts: {}", e);
+            // Create an empty renderer for now - we can handle this better later
+        }
         
         Ok(Self { fonts })
     }
@@ -253,15 +254,28 @@ impl WatermarkRenderer {
             return Ok(image);
         }
         
+        println!("Applying watermark - Type: {:?}, Enabled: {}", settings.watermark_type, settings.enabled);
+        
         match settings.watermark_type {
             WatermarkType::Text => {
                 if let Some(text_settings) = &settings.text_settings {
+                    println!("Applying text watermark with text: '{}'", text_settings.text);
+                    // Skip text watermarks if no fonts are loaded
+                    if self.fonts.is_empty() {
+                        println!("Warning: No fonts loaded, skipping text watermark");
+                        return Ok(image);
+                    }
                     self.apply_text_watermark(&mut image, settings, text_settings, metadata, filename)?;
+                } else {
+                    println!("Warning: Text watermark enabled but no text settings provided");
                 }
             }
             WatermarkType::Image => {
                 if let Some(watermark_path) = &settings.image_path {
+                    println!("Applying image watermark from: {}", watermark_path);
                     self.apply_image_watermark(&mut image, settings, watermark_path)?;
+                } else {
+                    println!("Warning: Image watermark enabled but no image path provided");
                 }
             }
         }
